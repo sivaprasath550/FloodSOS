@@ -1,0 +1,39 @@
+rules_version = '2';
+
+// There is no custom server, so these rules ARE the backend's input validation.
+// Anyone holding the (public) app config can call Firestore, so trust nothing.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /messages/{msgId} {
+      // DEMO TRADE-OFF: anyone can read, so the dashboard works without login.
+      // A real deployment would require rescuer sign-in (Firebase Auth) here,
+      // because these are the locations of real people.
+      allow read: if true;
+
+      // Create only. Messages are immutable facts: the first arrival wins and
+      // nobody can edit or delete someone's SOS.
+      allow create: if isValidMessage(msgId);
+      allow update, delete: if false;
+    }
+
+    // Must match SosMessage.toUploadFields() in the app (+ receivedAt).
+    function isValidMessage(msgId) {
+      let d = request.resource.data;
+      let fields = ['id', 'senderId', 'type', 'lat', 'lng', 'note', 'createdAt',
+                    'hops', 'channel', 'uploaderId', 'receivedAt'];
+      return d.keys().hasOnly(fields) && d.keys().hasAll(fields)
+        && d.id == msgId && msgId.size() <= 64          // doc id = message id (idempotency)
+        && d.senderId is string && d.senderId.size() <= 64
+        && d.uploaderId is string && d.uploaderId.size() <= 64
+        && d.type in ['SOS', 'SAFE']
+        && d.lat is number && d.lat >= -90 && d.lat <= 90
+        && d.lng is number && d.lng >= -180 && d.lng <= 180
+        && d.note is string && d.note.size() <= 100
+        && d.createdAt is int
+        && d.hops is int && d.hops >= 0 && d.hops <= 10
+        && d.channel in ['internet', 'relay', 'sms']
+        && d.receivedAt == request.time;                 // must be the server's clock, not the phone's
+    }
+  }
+}

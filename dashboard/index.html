@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FloodSOS Rescue Dashboard</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 14px/1.4 system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; }
+    header { padding: 10px 16px; background: #1d2733; color: #fff; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+    header h1 { font-size: 18px; margin: 0; }
+    .pill { padding: 2px 10px; border-radius: 999px; font-weight: 600; }
+    .sos { background: #d32f2f; color: #fff; }
+    .safe { background: #2e7d32; color: #fff; }
+    #conn { margin-left: auto; opacity: .8; }
+    main { flex: 1; display: flex; min-height: 0; }
+    #map { flex: 1; }
+    aside { width: 320px; overflow-y: auto; border-left: 1px solid #ddd; background: #fafafa; }
+    .item { padding: 10px 12px; border-bottom: 1px solid #e5e5e5; cursor: pointer; }
+    .item:hover { background: #eef3f8; }
+    .item .title { font-weight: 600; }
+    .item .meta { color: #666; font-size: 12px; }
+    .empty { padding: 16px; color: #666; }
+    @media (max-width: 700px) { main { flex-direction: column; } aside { width: auto; height: 40%; border-left: 0; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>FloodSOS</h1>
+    <span class="pill sos" id="sosCount">0 need help</span>
+    <span class="pill safe" id="safeCount">0 safe</span>
+    <span id="conn">Connecting…</span>
+  </header>
+  <main>
+    <div id="map"></div>
+    <aside id="list"><div class="empty">Waiting for messages…</div></aside>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
+    import { getFirestore, collection, query, orderBy, limit, onSnapshot }
+      from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
+
+    // Firebase Hosting serves this project's web config at a reserved URL,
+    // so no config (and no API key) needs to live in the repo.
+    const config = await (await fetch("/__/firebase/init.json")).json();
+    const db = getFirestore(initializeApp(config));
+
+    const map = L.map("map").setView([13.0827, 80.2707], 11); // Chennai
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19, attribution: "&copy; OpenStreetMap contributors",
+    }).addTo(map);
+    const pins = L.layerGroup().addTo(map);
+
+    let latestBySender = [];
+    let fittedOnce = false;
+
+    // Real-time listener: Firestore pushes every new message to us within ~1 s.
+    const q = query(collection(db, "messages"), orderBy("createdAt", "desc"), limit(1000));
+    onSnapshot(q, { includeMetadataChanges: true }, (snap) => {
+      document.getElementById("conn").textContent =
+        snap.metadata.fromCache ? "Offline: showing cached data" : `Live · ${snap.size} messages`;
+      latestBySender = latestPerSender(snap.docs.map((d) => d.data()));
+      render();
+    }, (err) => {
+      document.getElementById("conn").textContent = "Error: " + err.message;
+    });
+
+    // A person may send SOS, then SAFE later. Their newest message decides their pin.
+    function latestPerSender(messages) {
+      const seen = new Map();
+      for (const m of messages) if (!seen.has(m.senderId)) seen.set(m.senderId, m); // list is newest-first
+      // People needing help first, then the longest-waiting first.
+      return [...seen.values()].sort((a, b) =>
+        (a.type === "SOS" ? 0 : 1) - (b.type === "SOS" ? 0 : 1) || a.createdAt - b.createdAt);
+    }
+
+    function render() {
+      pins.clearLayers();
+      const list = document.getElementById("list");
+      list.replaceChildren();
+      let sos = 0, safe = 0;
+
+      for (const m of latestBySender) {
+        const isSos = m.type === "SOS";
+        isSos ? sos++ : safe++;
+        const color = isSos ? "#d32f2f" : "#2e7d32";
+        const marker = L.circleMarker([m.lat, m.lng], {
+          radius: isSos ? 10 : 7, color, fillColor: color, fillOpacity: 0.8, weight: 2,
+        }).bindPopup(details(m)).addTo(pins);
+
+        const item = el("div", "item");
+        item.append(
+          el("div", "title", `${isSos ? "🆘 SOS" : "✅ SAFE"} · ${ago(m.createdAt)}`),
+          el("div", "", m.note || "(no note)"),
+          el("div", "meta", `${m.channel} · ${m.hops} hops · ${m.lat.toFixed(5)}, ${m.lng.toFixed(5)}`),
+        );
+        item.onclick = () => { map.flyTo([m.lat, m.lng], 16); marker.openPopup(); };
+        list.append(item);
+      }
+
+      if (!latestBySender.length) list.append(el("div", "empty", "No messages yet."));
+      document.getElementById("sosCount").textContent = `${sos} need help`;
+      document.getElementById("safeCount").textContent = `${safe} safe`;
+
+      if (!fittedOnce && latestBySender.length) {
+        map.fitBounds(latestBySender.map((m) => [m.lat, m.lng]), { padding: [40, 40], maxZoom: 15 });
+        fittedOnce = true;
+      }
+    }
+
+    // The note is typed by anyone with the app. Build the popup with textContent,
+    // never innerHTML, so a note like "<img onerror=...>" can't run script here (XSS).
+    function details(m) {
+      const div = el("div");
+      const received = m.receivedAt?.toDate?.();
+      div.append(
+        el("strong", "", m.type),
+        el("div", "", m.note || "(no note)"),
+        el("div", "", `Sent: ${new Date(m.createdAt).toLocaleString()}`),
+        el("div", "", `Received: ${received ? received.toLocaleString() : "…"}`),
+        el("div", "", `Via ${m.channel}, ${m.hops} hops`),
+        el("div", "", `${m.lat.toFixed(5)}, ${m.lng.toFixed(5)}`),
+      );
+      return div;
+    }
+
+    function el(tag, cls = "", text = "") {
+      const e = document.createElement(tag);
+      if (cls) e.className = cls;
+      if (text) e.textContent = text;
+      return e;
+    }
+
+    function ago(ms) {
+      const min = Math.round((Date.now() - ms) / 60000);
+      if (min < 1) return "just now";
+      if (min < 60) return `${min} min ago`;
+      return `${Math.floor(min / 60)} h ${min % 60} min ago`;
+    }
+
+    // Keep "x min ago" fresh, but don't close a popup someone is reading.
+    let popupOpen = false;
+    map.on("popupopen", () => (popupOpen = true));
+    map.on("popupclose", () => (popupOpen = false));
+    setInterval(() => { if (!popupOpen) render(); }, 30_000);
+  </script>
+</body>
+</html>

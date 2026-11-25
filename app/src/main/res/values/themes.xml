@@ -1,0 +1,4 @@
+<resources>
+    <!-- Window theme only; all real styling is done in Compose (ui/Theme.kt). -->
+    <style name="Theme.FloodSOS" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

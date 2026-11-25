@@ -1,0 +1,31 @@
+# --- Secrets: NEVER commit these ---
+google-services.json
+**/google-services.json
+local.properties
+*.jks
+*.keystore
+service-account*.json
+.env
+
+# --- Gradle / build output ---
+.gradle/
+build/
+**/build/
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+
+# --- Android Studio / IntelliJ ---
+.idea/
+*.iml
+.kotlin/
+
+# --- OS junk ---
+.DS_Store
+Thumbs.db
+
+# --- Firebase CLI (Phase 2) ---
+.firebase/
+firebase-debug.log
