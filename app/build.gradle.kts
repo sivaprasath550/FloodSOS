@@ -36,6 +36,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true // BuildConfig.VERSION_NAME goes into field-test exports
     }
 }
 

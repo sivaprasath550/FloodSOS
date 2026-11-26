@@ -59,7 +59,7 @@ private fun hasLocationPermission(context: Context) = LOCATION_PERMISSIONS.any {
 }
 
 @Composable
-fun SosScreen(viewModel: SosViewModel, contentPadding: PaddingValues) {
+fun SosScreen(viewModel: SosViewModel, contentPadding: PaddingValues, onOpenStats: () -> Unit) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
@@ -126,6 +126,11 @@ fun SosScreen(viewModel: SosViewModel, contentPadding: PaddingValues) {
         }
         state.status?.let { status -> item { Text(status, style = MaterialTheme.typography.bodyMedium) } }
         item { RelayCard(viewModel) }
+        item {
+            OutlinedButton(onClick = onOpenStats, modifier = Modifier.fillMaxWidth()) {
+                Text("Field test stats")
+            }
+        }
         item { SmsSettingsCard(state, viewModel) }
         item {
             Text(

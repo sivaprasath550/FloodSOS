@@ -25,8 +25,8 @@ interface SosDao {
     @Query("SELECT * FROM messages WHERE uploaded = 0 ORDER BY createdAt ASC")
     suspend fun pendingUploads(): List<SosEntity>
 
-    @Query("UPDATE messages SET uploaded = 1 WHERE id = :id")
-    suspend fun markUploaded(id: String)
+    @Query("UPDATE messages SET uploaded = 1, uploadedAt = :at WHERE id = :id")
+    suspend fun markUploaded(id: String, at: Long)
 
     @Query("SELECT * FROM messages WHERE id = :id")
     suspend fun getById(id: String): SosEntity?
@@ -42,6 +42,17 @@ interface SosDao {
 
     @Query("SELECT COUNT(*) FROM messages WHERE uploaded = 0")
     suspend fun countNotUploaded(): Int
+
+    // ---- field-test exchange log (v3) ----
+
+    @Insert
+    suspend fun insertExchange(exchange: ExchangeEntity)
+
+    @Query("SELECT * FROM exchanges ORDER BY startedAt")
+    fun observeExchanges(): Flow<List<ExchangeEntity>>
+
+    @Query("SELECT * FROM exchanges ORDER BY startedAt")
+    suspend fun getExchanges(): List<ExchangeEntity>
 
     /** Which of these ids do we already hold? (A packet has at most ~100 ids, well under SQLite's 999-parameter limit.) */
     @Query("SELECT id FROM messages WHERE id IN (:ids)")

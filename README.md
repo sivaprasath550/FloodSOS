@@ -35,6 +35,7 @@ Rescuers see live pins on a web map: red for SOS, green for "I'm safe".
 - **Auto-upload** the moment the internet comes back
 - **Gateway mode:** any phone with internet can receive SOS SMS and forward them
 - **Live dashboard** (Leaflet + Firestore real-time listener) on Firebase Hosting
+- **Field-test tooling:** an in-app stats screen with JSON export, and a Python script that reports delivery rate, latency percentiles per channel and hop distribution
 
 ## Design highlights
 
@@ -59,6 +60,7 @@ Deliberately not used: CRDTs, custom crypto, Bloom filters and custom routing al
 | Serialization | kotlinx.serialization (versioned wire format) |
 | Backend | Firebase Firestore (no custom server) |
 | Dashboard | HTML + Leaflet.js on Firebase Hosting |
+| Analysis | Python 3 (standard library; matplotlib for charts) |
 
 ## Project structure
 
@@ -72,8 +74,9 @@ app/src/main/java/com/floodsos/
 ├── nearby/        Nearby Connections relay, permission helper
 ├── relay/         Foreground relay service (duty cycling)
 ├── location/      GPS provider
-└── ui/            Compose screen + ViewModel
+└── ui/            Compose screens (SOS, field-test stats) + ViewModels
 dashboard/         Rescuer web map (index.html)
+tools/             Field-test analysis (analyze.py) and export puller (pull_exports.py)
 firestore.rules    Server-side validation
 ```
 
@@ -101,9 +104,21 @@ firestore.rules    Server-side validation
 
 ### Running the tests
 ```bash
-./gradlew testDebugUnitTest
+./gradlew testDebugUnitTest            # 55 Kotlin unit tests
+python -m unittest discover -s tools   # 12 Python tests
 ```
-46 JVM unit tests cover the relay engine (including multi-phone simulations), both codecs, the duty cycle and the upload payload.
+The Kotlin tests cover the relay engine (including multi-phone simulations), both codecs, the duty cycle, field statistics and the upload payload. The Python tests cover the analysis maths.
+
+## Measuring a field test
+
+1. On each phone, open **Field test stats** and tap **Export**, or connect the phones by USB and run `python tools/pull_exports.py`.
+2. Run the analysis for the test window:
+   ```bash
+   python tools/analyze.py --exports field-data --since 2026-11-30T10:00 --until 2026-11-30T11:00
+   ```
+3. Read `results/report.md`: delivery rate (exports give the messages *sent*, Firestore the messages *delivered*), latency per channel, hop distribution, Bluetooth exchange stats, and which phones still hold undelivered messages.
+
+Raw exports contain real locations, so `field-data/` is git-ignored.
 
 ## Permissions
 
@@ -129,7 +144,7 @@ Each permission is requested when its feature is first turned on, not all at sta
 - [x] SMS fallback + gateway
 - [x] Nearby Connections exchange
 - [x] Multi-hop relay, background service, duty cycling, auto-upload
-- [ ] Debug/stats screen + Firestore export script (delivery rate, latency, hop distribution)
+- [x] Field-test stats screen + analysis script (delivery rate, latency, hop distribution)
 - [ ] Field test results and full design document
 
 ## Known limitations

@@ -26,6 +26,10 @@ captures/
 .DS_Store
 Thumbs.db
 
+# --- Field-test raw data: real locations and notes, keep private ---
+field-data/
+__pycache__/
+
 # --- Firebase CLI (Phase 2) ---
 .firebase/
 firebase-debug.log

@@ -2,6 +2,7 @@ package com.floodsos.nearby
 
 import android.content.Context
 import android.util.Log
+import com.floodsos.core.ExchangeRecord
 import com.floodsos.core.PeerCooldown
 import com.floodsos.core.RelayCodec
 import com.floodsos.core.RelayCodec.toDomain
@@ -79,6 +80,8 @@ class NearbyRelay(
     val state: StateFlow<RelayState> = _state
 
     private class Session(val peerName: String) {
+        var connectedAt: Long? = null // set once the connection succeeds
+        var recorded = false          // logged to the exchanges table already?
         var lastOutgoingPayloadId: Long? = null
         var sentAll = false
         var receivedAll = false
@@ -194,6 +197,7 @@ class NearbyRelay(
                 return
             }
             log("Connected to ${session.peerName}")
+            session.connectedAt = clock()
             updatePeerCount()
             session.watchdog = scope.launch {
                 delay(SESSION_TIMEOUT_MS) // never stay connected forever (battery, slots)
@@ -272,7 +276,17 @@ class NearbyRelay(
         if (!s.sentAll || !s.receivedAll) return
         cooldown.markSynced(s.peerName, clock())
         log("Exchanged with ${s.peerName}: sent ${s.sentCount}, got ${s.newCount} new")
+        recordExchange(s, success = true)
         disconnect(endpointId)
+    }
+
+    /** Logs the meeting once. Anything that ends before finishIfDone counts as a failure. */
+    private fun recordExchange(s: Session, success: Boolean) {
+        val start = s.connectedAt ?: return // never connected: not an exchange
+        if (s.recorded) return
+        s.recorded = true
+        val record = ExchangeRecord(s.peerName, start, clock() - start, s.sentCount, s.newCount, success)
+        scope.launch { repository.recordExchange(record) }
     }
 
     /** Our own disconnect does NOT trigger onDisconnected, so clean up here too. */
@@ -282,7 +296,10 @@ class NearbyRelay(
     }
 
     private fun endSession(endpointId: String) {
-        sessions.remove(endpointId)?.watchdog?.cancel()
+        sessions.remove(endpointId)?.let { s ->
+            s.watchdog?.cancel()
+            recordExchange(s, success = false) // no-op if it already finished successfully
+        }
         updatePeerCount()
     }
 

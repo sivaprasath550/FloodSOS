@@ -3,6 +3,7 @@ package com.floodsos.data.local
 import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import com.floodsos.core.HeldMessage
 import com.floodsos.core.SosMessage
 
 /**
@@ -20,10 +21,16 @@ data class SosEntity(
     val createdAt: Long,
     val hops: Int,
     val uploaded: Boolean,
-    // Added in DB version 2. The default lets Room's auto-migration fill existing rows.
+    // v2. The default lets Room's auto-migration fill existing rows.
     @ColumnInfo(defaultValue = "0") val smsSent: Boolean = false,
+    // v3 (field-test stats). 0 = unknown, for rows saved before v3.
+    @ColumnInfo(defaultValue = "0") val receivedAt: Long = 0,
+    val uploadedAt: Long? = null,
 )
 
 fun SosEntity.toDomain() = SosMessage(id, senderId, type, lat, lng, note, createdAt, hops, uploaded, smsSent)
 
-fun SosMessage.toEntity() = SosEntity(id, senderId, type, lat, lng, note, createdAt, hops, uploaded, smsSent)
+fun SosEntity.toHeld() = HeldMessage(toDomain(), receivedAt, uploadedAt)
+
+fun SosMessage.toEntity(receivedAt: Long) =
+    SosEntity(id, senderId, type, lat, lng, note, createdAt, hops, uploaded, smsSent, receivedAt)
